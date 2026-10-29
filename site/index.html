@@ -1,0 +1,101 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f0e7">
+  <meta name="description" content="北京日报、光明日报、经济日报每日标题聚合与原文链接">
+  <title>三报今日 · 北京日报 / 光明日报 / 经济日报</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <div class="paper-shell">
+    <header class="site-header">
+      <div class="header-rule" aria-hidden="true"></div>
+      <div class="header-topline">
+        <span>每日十时更新</span>
+        <span class="header-sep">·</span>
+        <span>标题聚合，原文直达</span>
+      </div>
+      <div class="masthead">
+        <p class="eyebrow">北京 · 光明 · 经济</p>
+        <h1>三报今日</h1>
+        <p class="masthead-subtitle">北京日报 <span>·</span> 光明日报 <span>·</span> 经济日报</p>
+      </div>
+      <div class="header-bottom">
+        <span id="updateTime">正在读取更新信息……</span>
+        <span class="copyright-note">仅收录标题与原文链接</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="stats" aria-label="今日收录概况">
+        <div class="stat">
+          <span class="stat-label">收录标题</span>
+          <strong id="totalCount">--</strong>
+          <span class="stat-unit">篇</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">报纸来源</span>
+          <strong id="sourceCount">--</strong>
+          <span class="stat-unit">家</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">报纸日期</span>
+          <strong id="paperDate">--</strong>
+        </div>
+        <div class="stat stat-wide">
+          <span class="stat-label">数据状态</span>
+          <strong id="dataStatus">正在加载</strong>
+        </div>
+      </section>
+
+      <section class="toolbar" aria-label="筛选文章">
+        <label class="field search-field">
+          <span>搜索标题</span>
+          <input id="searchInput" type="search" placeholder="输入关键词，如：经济、文化、改革" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>报纸日期</span>
+          <select id="dateSelect" aria-label="选择报纸日期"></select>
+        </label>
+        <label class="field">
+          <span>版面栏目</span>
+          <select id="sectionSelect" aria-label="选择版面栏目">
+            <option value="all">全部栏目</option>
+          </select>
+        </label>
+        <button id="clearButton" class="clear-button" type="button">清除筛选</button>
+      </section>
+
+      <nav id="sourceTabs" class="source-tabs" aria-label="按报纸筛选"></nav>
+
+      <section class="results" aria-live="polite">
+        <div class="results-heading">
+          <div>
+            <p class="section-kicker">TODAY'S PAPERS</p>
+            <h2 id="resultsTitle">今日文章</h2>
+          </div>
+          <span id="resultCount" class="result-count">-- 条</span>
+        </div>
+        <div id="articleGrid" class="article-grid"></div>
+        <div id="emptyState" class="empty-state" hidden>
+          <p class="empty-mark">三</p>
+          <h3>没有找到符合条件的文章</h3>
+          <p>换一个关键词、日期或栏目试试。</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>本站仅聚合北京日报、光明日报、经济日报的标题、栏目、日期与原文链接，不转载文章正文。</p>
+      <p>文章版权归原报刊及作者所有。若需公开展示全文，请先取得权利人授权。</p>
+      <p class="footer-source">数据来源：北京日报客户端电子报 · 光明日报电子报 · 经济日报电子报</p>
+    </footer>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="assets/app.js" defer></script>
+</body>
+</html>
