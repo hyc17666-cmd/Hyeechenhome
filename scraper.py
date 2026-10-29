@@ -1,8 +1,8 @@
 ﻿#!/usr/bin/env python3
-"""Collect headlines and links from three Chinese newspapers.
+"""Collect title-level metadata from three newspapers and Qiushi.
 
-This project intentionally stores only title-level metadata and source links.
-It does not store or republish article bodies.
+Only titles, sections, dates, issue labels and source links are stored.
+Article bodies are not stored or republished.
 """
 from __future__ import annotations
 
@@ -14,10 +14,10 @@ import re
 import sys
 import time
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, time as datetime_time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Iterable
-from urllib.parse import urljoin, urldefrag
+from urllib.parse import urldefrag, urljoin
 
 import requests
 from bs4 import BeautifulSoup
@@ -34,13 +34,16 @@ USER_AGENT = (
 )
 
 SOURCES = {
-    "beijing": {"name": "北京日报", "order": 1},
+    "people": {"name": "人民日报", "order": 1},
     "guangming": {"name": "光明日报", "order": 2},
     "economic": {"name": "经济日报", "order": 3},
+    "qiushi": {"name": "求是", "order": 4},
 }
 
-LOGGER = logging.getLogger("three-papers")
+LOGGER = logging.getLogger("three-papers-one-journal")
 EXCLUDED_TITLES = {"广告", "投稿网站", "关于经济日报社", "关于中国经济网"}
+EXCLUDED_SECTIONS = {"广告"}
+EXCLUDED_TITLE_PREFIXES = ("本版责编", "一版责编", "二版责编", "三版责编", "四版责编", "五版责编")
 
 
 @dataclass
@@ -53,6 +56,7 @@ class Article:
     page: int | None
     position: int
     section: str
+    issue: str | None
     title: str
     url: str
     fetched_at: str
@@ -91,9 +95,9 @@ def fetch_html(session: requests.Session, url: str) -> tuple[str, str]:
         response.raise_for_status()
     except requests.RequestException as exc:
         raise FetchError(f"{url}: {exc}") from exc
-
-    if not response.encoding or response.encoding.lower() in {"iso-8859-1", "ascii"}:
-        response.encoding = response.apparent_encoding or "utf-8"
+    # All four source families currently serve UTF-8 pages. Some People's Daily
+    # responses nevertheless advertise GB2312 in headers, which causes mojibake.
+    response.encoding = "utf-8"
     return response.text, response.url
 
 
@@ -103,7 +107,7 @@ def clean_text(value: str | None) -> str:
 
 def parse_section(value: str) -> tuple[int | None, str]:
     value = clean_text(value)
-    match = re.search(r"第\s*(\d+)\s*版\s*[：:]?\s*(.*)", value)
+    match = re.search(r"(?:第\s*)?(\d+)\s*版\s*[：:]?\s*(.*)", value)
     if match:
         return int(match.group(1)), clean_text(match.group(2))
     return None, value
@@ -122,11 +126,12 @@ def make_article(
     url: str,
     fetched_at: str,
     position: int = 0,
+    issue: str | None = None,
 ) -> Article:
     title = clean_text(title)
     section = clean_text(section)
     clean_url, _ = urldefrag(url)
-    raw_id = f"{source_key}|{paper_date.isoformat()}|{clean_url}|{title}"
+    raw_id = f"{source_key}|{paper_date.isoformat()}|{issue or ''}|{clean_url}|{title}"
     article_id = hashlib.sha1(raw_id.encode("utf-8")).hexdigest()[:16]
     source = SOURCES[source_key]
     return Article(
@@ -138,6 +143,7 @@ def make_article(
         page=page,
         position=position,
         section=section,
+        issue=issue,
         title=title,
         url=clean_url,
         fetched_at=fetched_at,
@@ -145,50 +151,24 @@ def make_article(
 
 
 def dedupe_articles(articles: Iterable[Article]) -> list[Article]:
-    """Keep one card per article title within one source and edition."""
     result: list[Article] = []
     seen: set[tuple[str, str]] = set()
     for article in articles:
-        key = (article.source_key, normalize_title(article.title))
-        if not article.title or article.title in EXCLUDED_TITLES or key in seen:
+        key = (
+            article.source_key,
+            article.url if article.source_key == "qiushi" else normalize_title(article.title),
+        )
+        if (
+            not article.title
+            or article.title in EXCLUDED_TITLES
+            or any(article.title.startswith(prefix) for prefix in EXCLUDED_TITLE_PREFIXES)
+            or article.section in EXCLUDED_SECTIONS
+            or key in seen
+        ):
             continue
         seen.add(key)
         result.append(article)
     return result
-
-
-def scrape_beijing(session: requests.Session, paper_date: date, fetched_at: str) -> list[Article]:
-    compact = paper_date.strftime("%Y%m%d")
-    url = (
-        "https://www.bjd.com.cn/bjrb/mobile/"
-        f"{paper_date:%Y}/{compact}/{compact}_m.html"
-    )
-    html, final_url = fetch_html(session, url)
-    soup = BeautifulSoup(html, "html.parser")
-    articles: list[Article] = []
-
-    for panel in soup.select(".nav-items"):
-        heading = panel.select_one(".nav-panel-heading")
-        page, section = parse_section(clean_text(heading.get_text(" ", strip=True) if heading else ""))
-        for position, anchor in enumerate(panel.select("a[data-href]"), start=1):
-            title = clean_text(anchor.get_text(" ", strip=True))
-            href = anchor.get("data-href", "")
-            if not title or not href:
-                continue
-            articles.append(
-                make_article(
-                    "beijing",
-                    paper_date,
-                    page,
-                    section,
-                    title,
-                    urljoin(final_url, href),
-                    fetched_at,
-                    position=position,
-                )
-            )
-
-    return dedupe_articles(articles)
 
 
 def section_urls(
@@ -209,6 +189,49 @@ def section_urls(
     return sorted(urls, key=page_number)
 
 
+def scrape_people(session: requests.Session, paper_date: date, fetched_at: str) -> list[Article]:
+    month = paper_date.strftime("%Y%m")
+    day = paper_date.strftime("%d")
+    first_url = f"https://paper.people.com.cn/rmrb/pc/layout/{month}/{day}/node_01.html"
+    html, final_url = fetch_html(session, first_url)
+    soup = BeautifulSoup(html, "html.parser")
+    node_pattern = re.compile(r"/rmrb/pc/layout/\d{6}/\d{2}/node_\d+\.html$")
+    nodes = section_urls(soup, final_url, node_pattern)
+    if not nodes:
+        nodes = [final_url]
+
+    articles: list[Article] = []
+    for node_url in nodes:
+        if node_url != final_url:
+            page_html, node_final_url = fetch_html(session, node_url)
+            time.sleep(0.22)
+        else:
+            page_html, node_final_url = html, final_url
+        node_soup = BeautifulSoup(page_html, "html.parser")
+
+        page: int | None = None
+        section = ""
+        for anchor in node_soup.find_all("a", href=True):
+            candidate, _ = urldefrag(urljoin(node_final_url, anchor["href"]))
+            if candidate.rstrip("/") == node_final_url.rstrip("/"):
+                page, section = parse_section(clean_text(anchor.get_text(" ", strip=True)))
+                if page is not None:
+                    break
+
+        for position, anchor in enumerate(node_soup.find_all("a", href=True), start=1):
+            title = clean_text(anchor.get_text(" ", strip=True))
+            article_url, _ = urldefrag(urljoin(node_final_url, anchor["href"]))
+            if not title or not re.search(r"/rmrb/pc/content/\d{6}/\d{2}/content_\d+\.html$", article_url):
+                continue
+            articles.append(
+                make_article(
+                    "people", paper_date, page, section, title, article_url, fetched_at,
+                    position=position,
+                )
+            )
+    return dedupe_articles(articles)
+
+
 def scrape_guangming(session: requests.Session, paper_date: date, fetched_at: str) -> list[Article]:
     month = paper_date.strftime("%Y%m")
     day = paper_date.strftime("%d")
@@ -224,11 +247,10 @@ def scrape_guangming(session: requests.Session, paper_date: date, fetched_at: st
     for node_url in nodes:
         if node_url != final_url:
             page_html, node_final_url = fetch_html(session, node_url)
-            time.sleep(0.25)
+            time.sleep(0.22)
         else:
             page_html, node_final_url = html, final_url
         node_soup = BeautifulSoup(page_html, "html.parser")
-
         page_title = clean_text(node_soup.title.get_text(" ", strip=True) if node_soup.title else "")
         match = re.search(r"第\s*(\d+)\s*版\s*[：:]\s*(.*?)_光明网", page_title)
         if match:
@@ -243,24 +265,16 @@ def scrape_guangming(session: requests.Session, paper_date: date, fetched_at: st
                 continue
             articles.append(
                 make_article(
-                    "guangming",
-                    paper_date,
-                    page,
-                    section,
-                    title,
-                    article_url,
-                    fetched_at,
+                    "guangming", paper_date, page, section, title, article_url, fetched_at,
                     position=position,
                 )
             )
-
     return dedupe_articles(articles)
 
 
 def scrape_economic(session: requests.Session, paper_date: date, fetched_at: str) -> list[Article]:
     month = paper_date.strftime("%Y%m")
     day = paper_date.strftime("%d")
-    # The HTTPS endpoint is intermittently unavailable; HTTP is the official e-paper endpoint.
     first_url = f"http://paper.ce.cn/pc/layout/{month}/{day}/node_01.html"
     html, final_url = fetch_html(session, first_url)
     soup = BeautifulSoup(html, "html.parser")
@@ -273,7 +287,7 @@ def scrape_economic(session: requests.Session, paper_date: date, fetched_at: str
     for node_url in nodes:
         if node_url != final_url:
             page_html, node_final_url = fetch_html(session, node_url)
-            time.sleep(0.25)
+            time.sleep(0.22)
         else:
             page_html, node_final_url = html, final_url
         node_soup = BeautifulSoup(page_html, "html.parser")
@@ -286,10 +300,6 @@ def scrape_economic(session: requests.Session, paper_date: date, fetched_at: str
                 page, section = parse_section(clean_text(anchor.get_text(" ", strip=True)))
                 if page is not None:
                     break
-        if page is None:
-            page, section = parse_section(
-                clean_text(node_soup.title.get_text(" ", strip=True) if node_soup.title else "")
-            )
 
         for position, anchor in enumerate(node_soup.find_all("a", href=True), start=1):
             title = clean_text(anchor.get_text(" ", strip=True))
@@ -298,24 +308,96 @@ def scrape_economic(session: requests.Session, paper_date: date, fetched_at: str
                 continue
             articles.append(
                 make_article(
-                    "economic",
-                    paper_date,
-                    page,
-                    section,
-                    title,
-                    article_url,
-                    fetched_at,
+                    "economic", paper_date, page, section, title, article_url, fetched_at,
                     position=position,
                 )
             )
+    return dedupe_articles(articles)
+
+
+def scrape_qiushi(session: requests.Session, paper_date: date, fetched_at: str) -> list[Article]:
+    """Collect the current issue shown on the Qiushi homepage.
+
+    Qiushi is semimonthly, so its issue date is not the daily aggregate date.
+    The issue label (for example 2026/20) is stored separately and displayed
+    in place of a newspaper date on the card.
+    """
+    url = "https://www.qstheory.cn/"
+    html, final_url = fetch_html(session, url)
+    soup = BeautifulSoup(html, "html.parser")
+
+    issue_candidates: list[tuple[int, int, str]] = []
+    for text in soup.find_all(string=re.compile(r"20\d{2}/\d{1,2}")):
+        for year, number in re.findall(r"(20\d{2})/(\d{1,2})", str(text)):
+            issue_candidates.append((int(year), int(number), f"{year}/{int(number):02d}"))
+    if not issue_candidates:
+        raise FetchError("求是首页未找到期号")
+    latest = max(issue_candidates)
+    issue = latest[2]
+
+    articles: list[Article] = []
+    position = 0
+
+    def add_from_anchor(anchor, section: str) -> None:
+        nonlocal position
+        if anchor is None:
+            return
+        article_url, _ = urldefrag(urljoin(final_url, anchor.get("href", "")))
+        if not re.search(r"/20\d{6}/[0-9a-f]{32}/c\.html$", article_url):
+            return
+        title = clean_text(anchor.get_text(" ", strip=True))
+        if not title:
+            return
+        position += 1
+        articles.append(
+            make_article(
+                "qiushi", paper_date, None, section, title, article_url, fetched_at,
+                position=position, issue=issue,
+            )
+        )
+
+    # The homepage hero carousel highlights the current issue's lead pieces.
+    for slide in soup.select(".swiper-slide"):
+        anchor = slide.select_one("h2 a") or slide.select_one("a[href]")
+        add_from_anchor(anchor, "本期要目")
+
+    # Current-issue cards.
+    for card in soup.select(".qs-card"):
+        meta = card.select_one(".qs-card-meta")
+        if not meta or issue not in clean_text(meta.get_text(" ", strip=True)):
+            continue
+        section_el = card.select_one(".qs-card-title")
+        section = clean_text(section_el.get_text(" ", strip=True)) if section_el else "本期文章"
+        anchor = card.select_one(".qs-card-content a") or card.select_one("a[href]")
+        add_from_anchor(anchor, section)
+
+    # Current-issue media cards.
+    for item in soup.select(".qs-media-item"):
+        meta = item.select_one(".qs-media-item-content span")
+        if not meta or issue not in clean_text(meta.get_text(" ", strip=True)):
+            continue
+        block = item.find_parent(class_="qs-media-block")
+        block_title = block.select_one(".qs-list-block-title") if block else None
+        section = clean_text(block_title.get_text(" ", strip=True)) if block_title else "本期文章"
+        add_from_anchor(item.select_one(".qs-media-item-content a"), section)
+
+    # Current-issue list items.
+    for item in soup.select("li"):
+        if not any(issue in clean_text(span.get_text(" ", strip=True)) for span in item.find_all("span")):
+            continue
+        block = item.find_parent(class_="qs-media-block")
+        block_title = block.select_one(".qs-list-block-title") if block else None
+        section = clean_text(block_title.get_text(" ", strip=True)) if block_title else "本期文章"
+        add_from_anchor(item.find("a", href=True), section)
 
     return dedupe_articles(articles)
 
 
 SCRAPERS: dict[str, Callable[[requests.Session, date, str], list[Article]]] = {
-    "beijing": scrape_beijing,
+    "people": scrape_people,
     "guangming": scrape_guangming,
     "economic": scrape_economic,
+    "qiushi": scrape_qiushi,
 }
 
 
@@ -326,6 +408,18 @@ def scrape_with_fallback(
     fetched_at: str,
 ) -> tuple[date | None, list[Article], str | None]:
     errors: list[str] = []
+    if source_key == "qiushi":
+        try:
+            LOGGER.info("求是: trying current issue")
+            articles = scrape_qiushi(session, latest_date, fetched_at)
+            if articles:
+                return latest_date, articles, None
+            errors.append("首页未找到当前期文章")
+        except Exception as exc:
+            errors.append(str(exc))
+            LOGGER.warning("求是 failed: %s", exc)
+        return None, [], "; ".join(errors)
+
     scraper = SCRAPERS[source_key]
     for offset in range(0, 4):
         paper_date = latest_date - timedelta(days=offset)
@@ -335,7 +429,7 @@ def scrape_with_fallback(
             if articles:
                 return paper_date, articles, None
             errors.append(f"{paper_date}: 无文章")
-        except Exception as exc:  # Keep the other sources running on failure.
+        except Exception as exc:
             errors.append(f"{paper_date}: {exc}")
             LOGGER.warning("%s %s failed: %s", source_key, paper_date, exc)
         time.sleep(0.8)
@@ -359,7 +453,10 @@ def merge_data(
     generated_at: str,
     keep_days: int,
 ) -> dict:
-    old_articles = existing.get("articles", [])
+    old_articles = [
+        article for article in existing.get("articles", [])
+        if article.get("source_key") in SOURCES
+    ]
     replaced = {
         (source_key, paper_date.isoformat())
         for source_key, (paper_date, _articles, _error) in updates.items()
@@ -371,13 +468,17 @@ def merge_data(
         for article in old_articles
         if (article.get("source_key"), article.get("paper_date")) not in replaced
     ]
+
+    # Qiushi is semimonthly; keep only the current issue in the rolling data.
+    if updates.get("qiushi", (None, [], None))[0] is not None:
+        articles = [article for article in articles if article.get("source_key") != "qiushi"]
+
     for _source_key, (paper_date, new_articles, _error) in updates.items():
         if paper_date is not None:
             articles.extend(asdict(article) for article in new_articles)
 
     cutoff = (latest_date - timedelta(days=keep_days - 1)).isoformat()
     articles = [article for article in articles if article.get("paper_date", "") >= cutoff]
-    # Stable sorts: date descending, then source order, page number and title ascending.
     articles.sort(
         key=lambda article: (
             int(article.get("page") or 999),
@@ -396,6 +497,7 @@ def merge_data(
                 "source_name": SOURCES[source_key]["name"],
                 "status": "ok" if paper_date is not None else "error",
                 "paper_date": paper_date.isoformat() if paper_date else None,
+                "issue": new_articles[0].issue if new_articles else None,
                 "count": len(new_articles),
                 "error": error,
             }
@@ -413,29 +515,21 @@ def merge_data(
 
 
 def run(args: argparse.Namespace) -> int:
-    latest_date = (
-        date.fromisoformat(args.date)
-        if args.date
-        else datetime.now(CHINA_TZ).date()
-    )
+    latest_date = date.fromisoformat(args.date) if args.date else datetime.now(CHINA_TZ).date()
     fetched_at = datetime.now(CHINA_TZ).isoformat(timespec="seconds")
     session = make_session()
-    updates: dict[str, tuple[date | None, list[Article], str | None]] = {}
-
-    for source_key in SCRAPERS:
-        updates[source_key] = scrape_with_fallback(source_key, session, latest_date, fetched_at)
-
-    existing = load_existing(args.data_file)
-    data = merge_data(existing, updates, latest_date, fetched_at, args.keep_days)
+    updates = {
+        source_key: scrape_with_fallback(source_key, session, latest_date, fetched_at)
+        for source_key in SCRAPERS
+    }
+    data = merge_data(load_existing(args.data_file), updates, latest_date, fetched_at, args.keep_days)
     args.data_file.parent.mkdir(parents=True, exist_ok=True)
-    args.data_file.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    args.data_file.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     for status in data["sources_status"]:
         if status["status"] == "ok":
-            print(f"{status['source_name']}: {status['count']} 篇 ({status['paper_date']})")
+            suffix = f" {status['issue']}" if status.get("issue") else ""
+            print(f"{status['source_name']}: {status['count']} 篇 ({status['paper_date']}{suffix})")
         else:
             print(f"{status['source_name']}: 失败 - {status['error']}", file=sys.stderr)
     print(f"数据已写入 {args.data_file}，共 {data['total']} 条")
@@ -443,7 +537,7 @@ def run(args: argparse.Namespace) -> int:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="抓取三报标题与原文链接")
+    parser = argparse.ArgumentParser(description="抓取三报一刊标题与原文链接")
     parser.add_argument("--date", help="指定报纸日期，格式 YYYY-MM-DD；默认使用北京时间当天")
     parser.add_argument("--keep-days", type=int, default=30, help="保留最近多少天的数据，默认 30")
     parser.add_argument("--data-file", type=Path, default=DEFAULT_DATA_FILE, help="输出 JSON 路径")

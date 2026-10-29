@@ -1,8 +1,9 @@
 ﻿const SOURCE_META = {
   all: { name: "全部", order: 0 },
-  beijing: { name: "北京日报", order: 1 },
+  people: { name: "人民日报", order: 1 },
   guangming: { name: "光明日报", order: 2 },
-  economic: { name: "经济日报", order: 3 }
+  economic: { name: "经济日报", order: 3 },
+  qiushi: { name: "求是", order: 4 }
 };
 
 const state = {
@@ -101,7 +102,7 @@ function renderSourceTabs() {
     counts[key] = articles.filter(article => article.source_key === key).length;
   }
 
-  const keys = ["all", "beijing", "guangming", "economic"];
+  const keys = ["all", "people", "guangming", "economic", "qiushi"];
   elements.sourceTabs.innerHTML = keys.map(key => {
     const meta = SOURCE_META[key];
     const isActive = state.selectedSource === key;
@@ -174,9 +175,10 @@ function renderStats() {
 }
 
 function articleCard(article) {
-  const sourceLabel = SOURCE_META[article.source_key]?.name || article.source_name || "报纸";
+  const sourceLabel = SOURCE_META[article.source_key]?.name || article.source_name || "报刊";
   const pageLabel = article.page ? `第${article.page}版` : "";
   const sectionLabel = article.section || "未分类";
+  const dateLabel = article.issue || formatDate(article.paper_date);
   return `<a class="article-card source-${escapeHtml(article.source_key)}"
       href="${escapeHtml(article.url)}" target="_blank" rel="noopener noreferrer">
     <div class="card-top">
@@ -186,7 +188,7 @@ function articleCard(article) {
     </div>
     <h3>${escapeHtml(article.title)}</h3>
     <div class="card-bottom">
-      <span class="date-badge">${escapeHtml(formatDate(article.paper_date))}</span>
+      <span class="date-badge">${escapeHtml(dateLabel)}</span>
       <span class="read-link">阅读原文 ↗</span>
     </div>
   </a>`;
@@ -198,7 +200,9 @@ function renderArticles() {
   elements.resultCount.textContent = `${count} 条`;
   elements.resultsTitle.textContent = state.selectedSource === "all"
     ? "今日文章"
-    : `${SOURCE_META[state.selectedSource].name} · 今日文章`;
+    : state.selectedSource === "qiushi"
+      ? "求是 · 本期文章"
+      : `${SOURCE_META[state.selectedSource].name} · 今日文章`;
   elements.articleGrid.innerHTML = state.filtered.map(articleCard).join("");
   elements.emptyState.hidden = count > 0;
   elements.articleGrid.hidden = count === 0;
@@ -229,7 +233,7 @@ async function loadData() {
       state.selectedDate = requestedDate;
     }
     const requestedSource = params.get("source");
-    if (["beijing", "guangming", "economic"].includes(requestedSource)) {
+    if (["people", "guangming", "economic", "qiushi"].includes(requestedSource)) {
       state.selectedSource = requestedSource;
     }
     const requestedSection = params.get("section");

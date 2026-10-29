@@ -4,7 +4,8 @@
   --ink: #202020;
   --muted: #6d665d;
   --line: #cfc5b5;
-  --beijing: #a93226;
+  --people: #a93226;
+  --qiushi: #8a5a12;
   --guangming: #24557d;
   --economic: #2d6b4f;
   --white: #fffdf8;
@@ -45,7 +46,7 @@ a { color: inherit; }
 .header-rule {
   height: 5px;
   margin-bottom: 18px;
-  background: linear-gradient(90deg, var(--beijing) 0 33.33%, var(--guangming) 33.33% 66.66%, var(--economic) 66.66% 100%);
+  background: linear-gradient(90deg, var(--people) 0 25%, var(--guangming) 25% 50%, var(--economic) 50% 75%, var(--qiushi) 75% 100%);
 }
 .header-topline,
 .header-bottom {
@@ -64,7 +65,7 @@ a { color: inherit; }
 }
 .eyebrow {
   margin: 0 0 12px;
-  color: var(--beijing);
+  color: var(--people);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: .34em;
@@ -80,14 +81,22 @@ h1 {
 }
 .masthead-subtitle {
   margin: 18px 0 0;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: .08em;
+}
+.masthead-sources {
+  margin: 10px 0 0;
   color: var(--muted);
   font-family: var(--serif);
-  font-size: 16px;
+  font-size: 13px;
   letter-spacing: .12em;
 }
-.masthead-subtitle span { margin: 0 5px; color: var(--line); }
+.masthead-sources span { margin: 0 5px; color: var(--line); }
 .header-bottom { align-items: center; text-transform: none; letter-spacing: .04em; }
-.copyright-note { color: var(--beijing); font-weight: 700; }
+.copyright-note { color: var(--people); font-weight: 700; }
 
 .stats {
   display: grid;
@@ -139,7 +148,7 @@ h1 {
 }
 .field input:focus,
 .field select:focus {
-  border-color: var(--beijing);
+  border-color: var(--people);
   box-shadow: 0 0 0 3px rgba(169,50,38,.1);
 }
 .field input::placeholder { color: #9a9185; }
@@ -180,7 +189,7 @@ h1 {
   padding-bottom: 12px;
   border-bottom: 2px solid var(--ink);
 }
-.section-kicker { margin: 0 0 3px; color: var(--beijing); font-size: 10px; font-weight: 700; letter-spacing: .24em; }
+.section-kicker { margin: 0 0 3px; color: var(--people); font-size: 10px; font-weight: 700; letter-spacing: .24em; }
 h2 { margin: 0; font-family: var(--serif); font-size: 28px; letter-spacing: .05em; }
 .result-count { color: var(--muted); font-size: 12px; white-space: nowrap; }
 
@@ -214,9 +223,10 @@ h2 { margin: 0; font-family: var(--serif); font-size: 28px; letter-spacing: .05e
   border-color: var(--source-color, var(--ink));
   box-shadow: 0 14px 24px rgba(48,38,23,.10);
 }
-.article-card.source-beijing { --source-color: var(--beijing); }
+.article-card.source-people { --source-color: var(--people); }
 .article-card.source-guangming { --source-color: var(--guangming); }
 .article-card.source-economic { --source-color: var(--economic); }
+.article-card.source-qiushi { --source-color: var(--qiushi); }
 .card-top, .card-bottom { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 .source-badge {
   display: inline-block;

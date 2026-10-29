@@ -1,4 +1,4 @@
-﻿name: Update and deploy three-paper digest
+﻿name: Update and deploy three-papers-one-journal digest
 
 on:
   schedule:
@@ -47,7 +47,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add site/data/articles.json
           if ! git diff --cached --quiet; then
-            git commit -m "chore: update three-paper headlines"
+            git commit -m "chore: update three-papers-one-journal headlines"
             git push
           fi
 
