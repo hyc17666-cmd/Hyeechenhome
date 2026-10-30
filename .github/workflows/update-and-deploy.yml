@@ -2,8 +2,10 @@
 
 on:
   schedule:
-    # GitHub Actions uses UTC. 02:17 UTC = 10:17 Asia/Shanghai.
+    # GitHub Actions uses UTC. Primary: 02:17 UTC = 10:17 Asia/Shanghai.
     - cron: "17 2 * * *"
+    # Fallback: 03:17 UTC = 11:17 Asia/Shanghai.
+    - cron: "17 3 * * *"
   workflow_dispatch:
   push:
     branches: ["main"]
@@ -22,26 +24,34 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || 'https://hyc17666-cmd.github.io/Hyeechenhome/' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Check today's data freshness
+        id: freshness
+        run: python3 scripts/check_freshness.py
+
       - name: Set up Python
+        if: github.event_name != 'schedule' || steps.freshness.outputs.needed == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
 
       - name: Install dependencies
+        if: github.event_name != 'schedule' || steps.freshness.outputs.needed == 'true'
         run: pip install -r requirements.txt
 
       - name: Collect headlines
+        if: github.event_name != 'schedule' || steps.freshness.outputs.needed == 'true'
         run: python scraper.py
 
       - name: Persist daily data
+        if: github.event_name != 'schedule' || steps.freshness.outputs.needed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -52,15 +62,18 @@ jobs:
           fi
 
       - name: Configure GitHub Pages
+        if: github.event_name != 'schedule' || steps.freshness.outputs.needed == 'true'
         uses: actions/configure-pages@v5
         with:
           enablement: true
 
       - name: Upload site artifact
+        if: github.event_name != 'schedule' || steps.freshness.outputs.needed == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
       - name: Deploy to GitHub Pages
+        if: github.event_name != 'schedule' || steps.freshness.outputs.needed == 'true'
         id: deployment
         uses: actions/deploy-pages@v4
