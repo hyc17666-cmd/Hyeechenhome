@@ -2,8 +2,8 @@
 
 on:
   schedule:
-    # GitHub Actions uses UTC. 02:00 UTC = 10:00 Asia/Shanghai.
-    - cron: "0 2 * * *"
+    # GitHub Actions uses UTC. 02:17 UTC = 10:17 Asia/Shanghai.
+    - cron: "17 2 * * *"
   workflow_dispatch:
   push:
     branches: ["main"]
