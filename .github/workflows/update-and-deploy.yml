@@ -1,12 +1,21 @@
-﻿name: Update and deploy three-papers-one-journal digest
+name: Update and deploy three-papers-one-journal digest
+run-name: "Update digest · ${{ github.event_name }} · ${{ inputs.trigger_source || 'native' }}"
 
 on:
   schedule:
-    # GitHub Actions uses UTC. Primary: 02:17 UTC = 10:17 Asia/Shanghai.
-    - cron: "17 2 * * *"
-    # Fallback: 03:17 UTC = 11:17 Asia/Shanghai.
-    - cron: "17 3 * * *"
+    # GitHub Actions uses UTC. Retry windows are intentionally spread out because
+    # scheduled workflows are best-effort and can be delayed during high load.
+    - cron: "17 2 * * *"  # 10:17 Asia/Shanghai
+    - cron: "47 2 * * *"  # 10:47 Asia/Shanghai
+    - cron: "17 3 * * *"  # 11:17 Asia/Shanghai
+    - cron: "47 3 * * *"  # 11:47 Asia/Shanghai
   workflow_dispatch:
+    inputs:
+      trigger_source:
+        description: "manual for an operator-triggered refresh; cloudflare-cron for the external scheduler"
+        required: false
+        default: "manual"
+        type: string
   push:
     branches: ["main"]
 
@@ -22,6 +31,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url || 'https://hyc17666-cmd.github.io/Hyeechenhome/' }}
@@ -35,23 +45,25 @@ jobs:
         id: freshness
         run: python3 scripts/check_freshness.py
 
+      # Scheduled and external automatic triggers only scrape when data is stale.
+      # A manual UI dispatch or a code push always refreshes and deploys.
       - name: Set up Python
-        if: github.event_name != 'schedule' || steps.freshness.outputs.needed == 'true'
+        if: steps.freshness.outputs.needed == 'true' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.trigger_source == 'manual')
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
 
       - name: Install dependencies
-        if: github.event_name != 'schedule' || steps.freshness.outputs.needed == 'true'
+        if: steps.freshness.outputs.needed == 'true' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.trigger_source == 'manual')
         run: pip install -r requirements.txt
 
       - name: Collect headlines
-        if: github.event_name != 'schedule' || steps.freshness.outputs.needed == 'true'
+        if: steps.freshness.outputs.needed == 'true' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.trigger_source == 'manual')
         run: python scraper.py
 
       - name: Persist daily data
-        if: github.event_name != 'schedule' || steps.freshness.outputs.needed == 'true'
+        if: steps.freshness.outputs.needed == 'true' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.trigger_source == 'manual')
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -62,18 +74,22 @@ jobs:
           fi
 
       - name: Configure GitHub Pages
-        if: github.event_name != 'schedule' || steps.freshness.outputs.needed == 'true'
+        if: steps.freshness.outputs.needed == 'true' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.trigger_source == 'manual')
         uses: actions/configure-pages@v5
         with:
           enablement: true
 
       - name: Upload site artifact
-        if: github.event_name != 'schedule' || steps.freshness.outputs.needed == 'true'
+        if: steps.freshness.outputs.needed == 'true' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.trigger_source == 'manual')
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
       - name: Deploy to GitHub Pages
-        if: github.event_name != 'schedule' || steps.freshness.outputs.needed == 'true'
+        if: steps.freshness.outputs.needed == 'true' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.trigger_source == 'manual')
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Report already fresh
+        if: steps.freshness.outputs.needed != 'true' && github.event_name != 'push' && !(github.event_name == 'workflow_dispatch' && inputs.trigger_source == 'manual')
+        run: echo "Today's data is already fresh; no scrape or deploy needed."

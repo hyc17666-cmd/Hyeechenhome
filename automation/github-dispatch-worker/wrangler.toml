@@ -1,0 +1,15 @@
+name = "three-papers-one-journal-trigger"
+main = "src/index.js"
+compatibility_date = "2026-10-31"
+
+[vars]
+GITHUB_REPO = "hyc17666-cmd/Hyeechenhome"
+GITHUB_WORKFLOW = "update-and-deploy.yml"
+GITHUB_REF = "main"
+
+# Cloudflare Cron Triggers use UTC.
+# 02:17 UTC = 10:17 Asia/Shanghai (primary)
+# 02:47 UTC = 10:47 Asia/Shanghai (retry)
+# 03:17 UTC = 11:17 Asia/Shanghai (fallback)
+[triggers]
+crons = ["17 2 * * *", "47 2 * * *", "17 3 * * *"]

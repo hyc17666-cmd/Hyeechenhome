@@ -9,3 +9,8 @@ Thumbs.db
 .obsidian/workspace-mobile.json
 .obsidian/cache/
 .trash/
+
+# Cloudflare Worker local files
+automation/github-dispatch-worker/node_modules/
+automation/github-dispatch-worker/.wrangler/
+automation/github-dispatch-worker/.dev.vars
